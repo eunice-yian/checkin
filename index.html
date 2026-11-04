@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>課程簽到</title>
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f0eb; --card: #fffdfb; --ink: #3d3330; --quiet: #8a7d76; --line: #e6ddd6;
+    --brand: #5b4a42; --brand-ink: #fff; --ok: #3f7d58; --ok-bg: #e7f2ea; --bad: #b24a3f; --bad-bg: #f8e6e3;
+    --warn: #9a6b12; --warn-bg: #fbf1dc;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+  main { max-width: 520px; margin: 0 auto; padding: 20px 16px 40px; }
+  .brand { text-align: center; letter-spacing: .35em; font-size: 12px; color: var(--quiet); margin: 4px 0 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; margin-bottom: 14px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  h2 { font-size: 16px; margin: 0 0 10px; }
+  p { line-height: 1.6; margin: 6px 0; }
+  .quiet { color: var(--quiet); font-size: 14px; }
+  label { display: block; font-size: 14px; color: var(--quiet); margin: 14px 0 6px; }
+  input { width: 100%; font-size: 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; color: var(--ink); }
+  input.code { font-size: 32px; letter-spacing: .4em; text-align: center; font-variant-numeric: tabular-nums; }
+  button { width: 100%; font-size: 17px; padding: 14px; border: 0; border-radius: 12px; background: var(--brand); color: var(--brand-ink); margin-top: 16px; font-weight: 600; }
+  button.ghost { background: transparent; color: var(--brand); border: 1px solid var(--brand); }
+  button:disabled { opacity: .5; }
+  .list button { text-align: left; margin-top: 10px; background: #fff; color: var(--ink); border: 1px solid var(--line); font-weight: 400; }
+  .list button b { display: block; font-size: 16px; }
+  .tag { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--brand); margin-right: 6px; }
+  .msg { padding: 12px 14px; border-radius: 12px; margin-top: 14px; font-size: 15px; line-height: 1.5; }
+  .msg.bad { background: var(--bad-bg); color: var(--bad); }
+  .msg.warn { background: var(--warn-bg); color: var(--warn); }
+  /* 簽到成功畫面：會動、時間會跑，截圖一看就知道 */
+  .result { text-align: center; padding: 28px 20px; }
+  .result.ok { background: var(--ok-bg); border-color: #c9e2d1; }
+  .result.late { background: var(--warn-bg); border-color: #efdcb5; }
+  .pulse { width: 96px; height: 96px; margin: 0 auto 12px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 48px; color: #fff; background: var(--ok); animation: pulse 1.6s ease-in-out infinite; }
+  .late .pulse { background: var(--warn); }
+  @keyframes pulse { 0%,100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(63,125,88,.35); }
+                     50% { transform: scale(1.06); box-shadow: 0 0 0 16px rgba(63,125,88,0); } }
+  .clock { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; margin: 10px 0 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td { padding: 10px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.r { text-align: right; white-space: nowrap; }
+  .good { color: var(--ok); font-weight: 600; }
+  .badtxt { color: var(--bad); font-weight: 600; }
+  /* 講師投影畫面 */
+  body.display main { max-width: 1100px; }
+  .disp { text-align: center; }
+  .disp .phase { display: inline-block; font-size: 22px; font-weight: 700; padding: 6px 18px; border-radius: 999px; background: var(--brand); color: #fff; }
+  .disp .big { font-size: clamp(56px, 14vw, 140px); font-weight: 800; letter-spacing: .12em; font-variant-numeric: tabular-nums; margin: 10px 0; }
+  .disp #qr { display: inline-block; padding: 16px; background: #fff; border-radius: 16px; margin: 8px 0; }
+  .disp #qr img, .disp #qr canvas { width: min(60vw, 380px) !important; height: auto !important; }
+  .bar { height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; margin: 12px auto 4px; max-width: 420px; }
+  .bar i { display: block; height: 100%; background: var(--brand); transition: width 1s linear; }
+  .row2 { display: flex; gap: 10px; }
+  .row2 button { flex: 1; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">GLOBE LADY · 格柏蕾蒂</div>
+  <div id="app"><div class="card"><p class="quiet">載入中…</p></div></div>
+</main>
+
+<script>
+/* ===== 部署前請填入這兩個設定 ===== */
+const CONFIG = {
+  LIFF_ID: '請填入LIFF_ID',
+  API_URL: '請填入Apps_Script網頁應用程式網址'
+};
+
+const $app = document.getElementById('app');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const view = html => { $app.innerHTML = html; window.scrollTo(0, 0); };
+const errorBox = (msg, kind = 'bad') => `<div class="msg ${kind}">${esc(msg)}</div>`;
+let timers = [];
+let ME = null;
+const pendingNote = () => ME && ME.member && ME.member.status === '待審核'
+  ? `<div class="msg warn">您的會員資料待公司確認，簽到紀錄會照常保存。</div>` : '';
+const clearTimers = () => { timers.forEach(t => clearInterval(t)); timers = []; };
+
+function getParams() {
+  const p = new URLSearchParams(location.search);
+  const state = p.get('liff.state');
+  if (state) {
+    const q = decodeURIComponent(state);
+    const i = q.indexOf('?');
+    if (i >= 0) new URLSearchParams(q.slice(i + 1)).forEach((v, k) => p.set(k, v));
+  }
+  return p;
+}
+
+async function api(action, data = {}, tries = 3) {
+  const body = JSON.stringify(Object.assign({ action, idToken: liff.getIDToken() }, data));
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res = await fetch(CONFIG.API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body });
+      const json = await res.json();
+      if (!json.ok) {
+        if (json.message === 'AUTH_EXPIRED') { relogin(); throw new Error('登入已過期，正在重新登入…'); }
+        const e = new Error(json.message === 'PENDING' ? '您的登記尚待公司核准，核准後即可簽到' : json.message); e.business = true; throw e;
+      }
+      return json;
+    } catch (e) {
+      lastErr = e;
+      if (e.business) throw e;
+      await new Promise(r => setTimeout(r, 800 * (i + 1)));   // 網路忙碌時自動重試
+    }
+  }
+  throw new Error('網路忙碌，請稍後再試一次（' + (lastErr && lastErr.message || '') + '）');
+}
+
+function relogin() {
+  try {
+    if (sessionStorage.getItem('relogin')) return;
+    sessionStorage.setItem('relogin', '1');
+  } catch (e) {}
+  liff.logout();
+  liff.login({ redirectUri: location.href });
+}
+
+function getLocation() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error('這支手機無法取得定位'));
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy }),
+      () => reject(new Error('無法取得定位。實體課程需要定位才能簽到，請到手機設定允許 LINE 使用位置資訊後再試一次')),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  });
+}
+
+/* ================= 啟動 ================= */
+async function main() {
+  try {
+    await liff.init({ liffId: CONFIG.LIFF_ID });
+  } catch (e) {
+    return view(`<div class="card"><h1>無法啟動</h1>${errorBox('LIFF 初始化失敗：' + e.message)}</div>`);
+  }
+  if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+
+  const params = getParams();
+  const page = params.get('page') || 'checkin';
+  let me;
+  try {
+    me = await api('whoami');
+    try { sessionStorage.removeItem('relogin'); } catch (e) {}
+  } catch (e) {
+    return view(`<div class="card"><h1>連線失敗</h1>${errorBox(e.message)}<button onclick="location.reload()">重新整理</button></div>`);
+  }
+
+  if (!me.member) return renderBind(me);
+  if (me.member.status === '停用') return view(`<div class="card"><h1>帳號已停用</h1><p>請聯絡公司。</p></div>`);
+  if (me.member.status !== '已核准' && me.member.status !== '待審核') return renderPending(me);
+  ME = me;
+
+  if (page === 'admin') return renderStaffList(me);
+  if (page === 'me') return renderMe(me);
+
+  const s = params.get('s'), c = params.get('c');
+  if (s && c) return doSubmit({ courseId: s, code: c, viaQr: true });
+  return renderOnline(me);
+}
+
+/* ================= 綁定 ================= */
+function renderBind(me) {
+  view(`<div class="card">
+    <h1>第一次使用，請先登記</h1>
+    <p class="quiet">只需要登記一次。一個 LINE 帳號只能對應一個會員編號，公司會再確認資料。</p>
+    <label>會員編號 *</label><input id="mid" autocomplete="off" maxlength="30">
+    <label>姓名（與公司登記相同）*</label><input id="mname" autocomplete="off" maxlength="30">
+    <label>所屬團隊</label><input id="mteam" autocomplete="off" maxlength="30" placeholder="例如：Anny's Super Rich Team">
+    <label>目前階級</label><input id="mlevel" autocomplete="off" maxlength="20" placeholder="例如：會員、組長、科長">
+    <button id="go">送出登記</button>
+    <div id="out"></div>
+  </div>`);
+  document.getElementById('go').onclick = async () => {
+    const btn = document.getElementById('go'); btn.disabled = true;
+    const val = id => document.getElementById(id).value;
+    try {
+      const r = await api('bind', { memberId: val('mid'), name: val('mname'), team: val('mteam'), level: val('mlevel') });
+      view(`<div class="card"><h1>登記完成</h1><p>${esc(r.message)}</p>
+        <button onclick="location.reload()">開始簽到</button></div>`);
+    } catch (e) {
+      document.getElementById('out').innerHTML = errorBox(e.message); btn.disabled = false;
+    }
+  };
+}
+
+function renderPending(me) {
+  view(`<div class="card"><h1>等待公司確認</h1>
+    <p>${esc(me.member.name)} 您好，您的登記已送出，公司確認後即可開始簽到。</p>
+    <button class="ghost" onclick="location.reload()">重新整理</button></div>`);
+}
+
+/* ================= 線上課：選課程＋輸入驗證碼 ================= */
+async function renderOnline(me, notice = pendingNote()) {
+  view(`<div class="card"><p class="quiet">讀取開放中的課程…</p></div>`);
+  let r;
+  try { r = await api('openCourses'); }
+  catch (e) { return view(`<div class="card">${errorBox(e.message)}<button onclick="location.reload()">重新整理</button></div>`); }
+
+  if (!r.courses.length) {
+    return view(`<div class="card"><h1>${esc(me.member.name)} 您好</h1>
+      <p>目前沒有開放簽到、抽點或簽退的課程。</p>
+      <p class="quiet">簽到於開課前 30 分鐘開放；簽退碼在下課時間才會出現。</p>
+      ${notice}<button class="ghost" onclick="location.reload()">重新整理</button>
+      <button class="ghost" onclick="location.href='?page=me'">查看我的出席紀錄</button></div>`);
+  }
+  if (r.courses.length === 1) return renderCodeInput(me, r.courses[0], notice);
+  view(`<div class="card"><h1>請選擇課程</h1>${notice}<div class="list">
+    ${r.courses.map((c, i) => `<button data-i="${i}"><span class="tag">${esc(c.type)}</span><b>${esc(c.name)}</b><span class="quiet">${esc(c.start)}–${esc(c.end)}</span></button>`).join('')}
+  </div></div>`);
+  $app.querySelectorAll('.list button').forEach(b => b.onclick = () => renderCodeInput(me, r.courses[Number(b.dataset.i)]));
+}
+
+function renderCodeInput(me, course, notice = pendingNote()) {
+  const physical = course.type === '實體';
+  view(`<div class="card">
+    <span class="tag">${esc(course.type)}</span>
+    <h1>${esc(course.name)}</h1>
+    <p class="quiet">${esc(course.start)}–${esc(course.end)}｜${esc(me.member.name)}</p>
+    ${notice}
+    <label>請輸入講師畫面上的 6 位數驗證碼</label>
+    <input id="code" class="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="••••••">
+    ${physical ? '<p class="quiet">實體課程會同時確認您的位置。也可以直接用 LINE 掃描現場的 QR Code。</p>' : ''}
+    <button id="go">送出</button>
+    <div id="out"></div>
+  </div>`);
+  const input = document.getElementById('code');
+  input.focus();
+  input.oninput = () => { input.value = input.value.replace(/\D/g, '').slice(0, 6); };
+  document.getElementById('go').onclick = () => doSubmit({ courseId: course.id, code: input.value, physical, outEl: 'out', retry: () => renderCodeInput(me, course) });
+}
+
+/* ================= 送出簽到 ================= */
+async function doSubmit({ courseId, code, viaQr, physical, outEl, retry }) {
+  const showErr = msg => {
+    if (outEl && document.getElementById(outEl)) {
+      document.getElementById(outEl).innerHTML = errorBox(msg);
+      const b = document.getElementById('go'); if (b) b.disabled = false;
+    } else {
+      view(`<div class="card"><h1>未完成</h1>${errorBox(msg)}
+        <p class="quiet">若驗證碼已過期，請再掃一次現場最新的 QR Code。</p>
+        <button onclick="liff.closeWindow()">關閉</button></div>`);
+    }
+  };
+  const btn = document.getElementById('go'); if (btn) btn.disabled = true;
+  if (!viaQr && String(code).length !== 6) return showErr('請輸入 6 位數驗證碼');
+
+  if (viaQr) view(`<div class="card"><p class="quiet">正在確認位置與驗證碼…</p></div>`);
+  const payload = { courseId, code };
+  if (viaQr || physical) {
+    try { Object.assign(payload, await getLocation()); }
+    catch (e) { return showErr(e.message); }
+  }
+  try {
+    const r = await api('submit', payload);
+    renderResult(r);
+  } catch (e) {
+    showErr(e.message);
+  }
+}
+
+function renderResult(r) {
+  clearTimers();
+  const late = r.verdict === '遲到';
+  view(`<div class="card result ${late ? 'late' : 'ok'}">
+    <div class="pulse">${late ? '!' : '✓'}</div>
+    <h1>${esc(r.label)}${r.duplicate ? '（已完成）' : '成功'}</h1>
+    <p><b>${esc(r.name)}</b>｜${esc(r.course)}</p>
+    <p>${esc(r.label)}時間：<b>${esc(String(r.time).slice(11))}</b>${r.label === '簽到' ? `（${esc(r.verdict)}）` : ''}</p>
+    <div class="clock" id="clock"></div>
+    <p class="quiet">畫面時間會持續跳動，工作人員可查看</p>
+  </div>
+  <button class="ghost" onclick="location.href='?page=me'">查看我的出席紀錄</button>
+  <button onclick="liff.closeWindow()">關閉</button>`);
+  const tick = () => {
+    const el = document.getElementById('clock');
+    if (el) el.textContent = new Date().toLocaleTimeString('zh-TW', { hour12: false, timeZone: 'Asia/Taipei' });
+  };
+  tick(); timers.push(setInterval(tick, 1000));
+}
+
+/* ================= 我的紀錄 ================= */
+async function renderMe(me) {
+  view(`<div class="card"><p class="quiet">讀取紀錄中…</p></div>`);
+  try {
+    const r = await api('myRecords');
+    view(`<div class="card">
+      <h1>${esc(r.name)}｜${esc(r.month)} 出席紀錄</h1>
+      <p class="quiet">列入考核的課程，以系統時間為準</p>
+      ${r.items.length ? `<table>${r.items.map(i => `<tr>
+        <td>${esc(i.date)}<br><span class="quiet">${esc(i.type)}</span></td>
+        <td>${esc(i.name)}<br><span class="quiet">簽到 ${esc(i.inTime || '—')}｜簽退 ${esc(i.outTime || '—')}</span></td>
+        <td class="r ${i.ok ? 'good' : (i.pending ? '' : 'badtxt')}">${esc(i.result)}</td></tr>`).join('')}</table>`
+        : '<p>本月尚無課程紀錄。</p>'}
+      ${r.items.length ? `<div class="msg ${r.allOk ? '' : 'warn'}" style="${r.allOk ? 'background:var(--ok-bg);color:var(--ok)' : ''}">
+        ${r.allOk ? '目前為止全程出席' : '有課程未達全程出席，如有疑問請於月底前聯絡公司'}</div>` : ''}
+    </div><button class="ghost" onclick="location.href='?'">回簽到頁</button>`);
+  } catch (e) {
+    view(`<div class="card">${errorBox(e.message)}</div>`);
+  }
+}
+
+/* ================= 講師／管理員 ================= */
+async function renderStaffList(me) {
+  view(`<div class="card"><p class="quiet">讀取課程…</p></div>`);
+  let r;
+  try { r = await api('staffCourses'); }
+  catch (e) { return view(`<div class="card">${errorBox(e.message)}</div>`); }
+  view(`<div class="card"><h1>講師投影畫面</h1><p class="quiet">選擇要投影驗證碼的課程（昨天到明天）</p>
+    <div class="list">${r.courses.length ? r.courses.map((c, i) =>
+      `<button data-i="${i}"><span class="tag">${esc(c.type)}</span><b>${esc(c.name)}</b><span class="quiet">${esc(c.date)} ${esc(c.start)}–${esc(c.end)}</span></button>`).join('')
+      : '<p>這段時間沒有課程。請先在試算表「課程」頁新增。</p>'}</div></div>`);
+  $app.querySelectorAll('.list button').forEach(b => b.onclick = () => renderDisplay(r.courses[Number(b.dataset.i)]));
+}
+
+function renderDisplay(course) {
+  clearTimers();
+  document.body.classList.add('display');
+  view(`<div class="card disp">
+    <h1>${esc(course.name)}</h1>
+    <p class="quiet">${esc(course.date)} ${esc(course.start)}–${esc(course.end)}｜${esc(course.type)}課程</p>
+    <div id="phase"></div>
+    <div id="qr"></div>
+    <div class="big" id="code">······</div>
+    <div class="bar"><i id="bar" style="width:100%"></i></div>
+    <p class="quiet" id="hint"></p>
+    <div id="err"></div>
+  </div>
+  <div class="row2">
+    <button class="ghost" id="spot">發起抽點</button>
+    <button class="ghost" id="fs">全螢幕</button>
+  </div>
+  <button class="ghost" onclick="location.reload()">回課程列表</button>`);
+
+  const qrBox = document.getElementById('qr');
+  const qr = new QRCode(qrBox, { width: 380, height: 380, correctLevel: QRCode.CorrectLevel.M });
+  let lastCode = '', remain = 0, period = 30;
+
+  let busy = false;
+  async function refresh() {
+    if (busy) return;
+    busy = true;
+    try {
+      const d = await api('displayCode', { courseId: course.id }, 1);
+      document.getElementById('err').innerHTML = '';
+      remain = d.secondsLeft; period = d.period;
+      const physical = d.course.type === '實體';
+      document.getElementById('spot').disabled = !d.canSpotCheck;
+      document.getElementById('spot').textContent = d.spotChecksDone ? `發起抽點（已抽 ${d.spotChecksDone} 次）` : '發起抽點';
+      if (d.code) {
+        document.getElementById('phase').innerHTML = `<span class="phase">${esc(d.phase)}中</span>`;
+        if (d.code !== lastCode) {
+          lastCode = d.code;
+          document.getElementById('code').textContent = d.code;
+          const url = `https://liff.line.me/${CONFIG.LIFF_ID}?s=${encodeURIComponent(d.course.id)}&c=${d.code}`;
+          qr.clear(); qr.makeCode(url);
+        }
+        qrBox.style.display = physical ? '' : 'none';
+        document.getElementById('hint').textContent = physical
+          ? '請用 LINE 掃描 QR Code，或在官方帳號點「我要簽到」輸入數字'
+          : '請在官方帳號點「我要簽到」，輸入上方 6 位數驗證碼';
+      } else {
+        lastCode = '';
+        document.getElementById('phase').innerHTML = '';
+        document.getElementById('code').textContent = '';
+        qrBox.style.display = 'none';
+        document.getElementById('hint').textContent = d.next;
+      }
+    } catch (e) {
+      document.getElementById('err').innerHTML = errorBox(e.message);
+    } finally {
+      busy = false;
+    }
+  }
+
+  refresh();
+  timers.push(setInterval(() => {
+    remain = Math.max(0, remain - 1);
+    const bar = document.getElementById('bar');
+    if (bar) bar.style.width = (lastCode ? (remain / period) * 100 : 0) + '%';
+    if (lastCode && remain <= 0) refresh();
+  }, 1000));
+  timers.push(setInterval(refresh, 10000));   // 每 10 秒同步一次狀態
+
+  document.getElementById('spot').onclick = async () => {
+    if (!confirm('確定要發起抽點？夥伴需要在 3 分鐘內輸入驗證碼。')) return;
+    try {
+      const r = await api('startSpotCheck', { courseId: course.id });
+      alert(`第 ${r.no} 次抽點開始，${r.until} 截止`);
+      lastCode = ''; refresh();
+    } catch (e) { alert(e.message); }
+  };
+  document.getElementById('fs').onclick = () => {
+    const el = document.documentElement;
+    (el.requestFullscreen || el.webkitRequestFullscreen || (() => {})).call(el);
+  };
+}
+
+main();
+</script>
+</body>
+</html>
