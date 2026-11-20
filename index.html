@@ -28,6 +28,7 @@
   button { width: 100%; font-size: 17px; padding: 14px; border: 0; border-radius: 12px; background: var(--brand); color: var(--brand-ink); margin-top: 16px; font-weight: 600; }
   button.ghost { background: transparent; color: var(--brand); border: 1px solid var(--brand); }
   button:disabled { opacity: .5; }
+  button.tap { font-size: 22px; padding: 20px; letter-spacing: .3em; }
   .list button { text-align: left; margin-top: 10px; background: #fff; color: var(--ink); border: 1px solid var(--line); font-weight: 400; }
   .list button b { display: block; font-size: 16px; }
   .tag { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--brand); margin-right: 6px; }
@@ -175,9 +176,9 @@ function renderBind(me) {
     <h1>第一次使用，請先登記</h1>
     <p class="quiet">只需要登記一次。一個 LINE 帳號只能對應一個會員編號，公司會再確認資料。</p>
     <label>會員編號 *</label><input id="mid" autocomplete="off" maxlength="30">
-    <label>姓名（與公司登記相同）*</label><input id="mname" autocomplete="off" maxlength="30">
-    <label>所屬團隊</label><input id="mteam" autocomplete="off" maxlength="30" placeholder="例如：Anny's Super Rich Team">
-    <label>目前階級</label><input id="mlevel" autocomplete="off" maxlength="20" placeholder="例如：會員、組長、科長">
+    <label>姓名（入會時的會員名稱）*</label><input id="mname" autocomplete="off" maxlength="30">
+    <label>所屬團隊</label><input id="mteam" autocomplete="off" maxlength="30">
+    <label>目前階級</label><input id="mlevel" autocomplete="off" maxlength="20" placeholder="例如：會員、組長、科長、小盤">
     <button id="go">送出登記</button>
     <div id="out"></div>
   </div>`);
@@ -200,7 +201,7 @@ function renderPending(me) {
     <button class="ghost" onclick="location.reload()">重新整理</button></div>`);
 }
 
-/* ================= 線上課：選課程＋輸入驗證碼 ================= */
+/* ================= 簽到首頁：列出現在開放的課程 ================= */
 async function renderOnline(me, notice = pendingNote()) {
   view(`<div class="card"><p class="quiet">讀取開放中的課程…</p></div>`);
   let r;
@@ -209,16 +210,39 @@ async function renderOnline(me, notice = pendingNote()) {
 
   if (!r.courses.length) {
     return view(`<div class="card"><h1>${esc(me.member.name)} 您好</h1>
-      <p>目前沒有開放簽到、抽點或簽退的課程。</p>
-      <p class="quiet">簽到於開課前 30 分鐘開放；簽退碼在下課時間才會出現。</p>
+      <p>目前沒有開放簽到或簽退的課程。</p>
+      <p class="quiet">簽到於開課前 30 分鐘開放；簽退於下課時間開放 30 分鐘。</p>
       ${notice}<button class="ghost" onclick="location.reload()">重新整理</button>
       <button class="ghost" onclick="location.href='?page=me'">查看我的出席紀錄</button></div>`);
   }
-  if (r.courses.length === 1) return renderCodeInput(me, r.courses[0], notice);
-  view(`<div class="card"><h1>請選擇課程</h1>${notice}<div class="list">
-    ${r.courses.map((c, i) => `<button data-i="${i}"><span class="tag">${esc(c.type)}</span><b>${esc(c.name)}</b><span class="quiet">${esc(c.start)}–${esc(c.end)}</span></button>`).join('')}
-  </div></div>`);
-  $app.querySelectorAll('.list button').forEach(b => b.onclick = () => renderCodeInput(me, r.courses[Number(b.dataset.i)]));
+
+  // 需要驗證碼的模式（目前公司設定為不需要）
+  if (r.requireCode) {
+    if (r.courses.length === 1) return renderCodeInput(me, r.courses[0], notice);
+    view(`<div class="card"><h1>請選擇課程</h1>${notice}<div class="list">
+      ${r.courses.map((c, i) => `<button data-i="${i}"><span class="tag">${esc(c.type)}</span><b>${esc(c.name)}</b><span class="quiet">${esc(c.start)}–${esc(c.end)}</span></button>`).join('')}
+    </div></div>`);
+    $app.querySelectorAll('.list button').forEach(b => b.onclick = () => renderCodeInput(me, r.courses[Number(b.dataset.i)]));
+    return;
+  }
+
+  // 不需要驗證碼：每堂課一張卡片，一個大按鈕
+  view(`<div class="card"><h1>${esc(me.member.name)} 您好</h1>
+      <p class="quiet">${new Date().toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei', month: 'long', day: 'numeric', weekday: 'long' })}</p>${notice}</div>
+    ${r.courses.map((c, i) => `<div class="card">
+      <span class="tag">${esc(c.type)}</span>
+      <h2 style="margin-top:8px">${esc(c.name)}</h2>
+      <p class="quiet">${esc(c.start)}–${esc(c.end)}${c.type === '實體' ? '｜會確認您的位置' : ''}</p>
+      ${c.done
+        ? `<div class="msg" style="background:var(--ok-bg);color:var(--ok)">已於 ${esc(c.done)} 完成${esc(c.label)}</div>`
+        : `<button class="tap" data-i="${i}">${esc(c.label)}</button><div id="out${i}"></div>`}
+    </div>`).join('')}
+    <button class="ghost" onclick="location.href='?page=me'">查看我的出席紀錄</button>`);
+  $app.querySelectorAll('button.tap').forEach(b => b.onclick = () => {
+    const c = r.courses[Number(b.dataset.i)];
+    b.id = 'go';
+    doSubmit({ courseId: c.id, phase: c.phase, physical: c.type === '實體', outEl: 'out' + b.dataset.i, noCode: true });
+  });
 }
 
 function renderCodeInput(me, course, notice = pendingNote()) {
@@ -241,11 +265,12 @@ function renderCodeInput(me, course, notice = pendingNote()) {
 }
 
 /* ================= 送出簽到 ================= */
-async function doSubmit({ courseId, code, viaQr, physical, outEl, retry }) {
+async function doSubmit({ courseId, code, phase, viaQr, physical, outEl, noCode }) {
   const showErr = msg => {
     if (outEl && document.getElementById(outEl)) {
       document.getElementById(outEl).innerHTML = errorBox(msg);
-      const b = document.getElementById('go'); if (b) b.disabled = false;
+      const b = document.getElementById('go');
+      if (b) { b.disabled = false; if (noCode) { b.textContent = '再試一次'; b.removeAttribute('id'); } }
     } else {
       view(`<div class="card"><h1>未完成</h1>${errorBox(msg)}
         <p class="quiet">若驗證碼已過期，請再掃一次現場最新的 QR Code。</p>
@@ -253,10 +278,11 @@ async function doSubmit({ courseId, code, viaQr, physical, outEl, retry }) {
     }
   };
   const btn = document.getElementById('go'); if (btn) btn.disabled = true;
-  if (!viaQr && String(code).length !== 6) return showErr('請輸入 6 位數驗證碼');
+  if (!noCode && !viaQr && String(code).length !== 6) return showErr('請輸入 6 位數驗證碼');
 
   if (viaQr) view(`<div class="card"><p class="quiet">正在確認位置與驗證碼…</p></div>`);
-  const payload = { courseId, code };
+  if (noCode && btn) btn.textContent = physical ? '確認位置中…' : '送出中…';
+  const payload = noCode ? { courseId, phase } : { courseId, code };
   if (viaQr || physical) {
     try { Object.assign(payload, await getLocation()); }
     catch (e) { return showErr(e.message); }
